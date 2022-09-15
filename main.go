@@ -20,7 +20,7 @@ import (
 )
 
 func main() {
-	log.Print("Hello...")
+	log.Print("Hello.. 2 .")
 }
 
 
