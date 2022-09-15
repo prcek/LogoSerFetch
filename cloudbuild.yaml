@@ -3,4 +3,14 @@ steps:
   args: ['-D', 'build', '--progress=plain', '--no-cache', '-t', 'europe-west2-docker.pkg.dev/dateio/logoser/fetch:$SHORT_SHA', '.']
 
 - name: 'gcr.io/cloud-builders/docker'
+  args: ['tag', 'europe-west2-docker.pkg.dev/dateio/logoser/fetch:$SHORT_SHA', 'europe-west2-docker.pkg.dev/dateio/logoser/fetch']
+
+- name: 'gcr.io/cloud-builders/docker'
   args: ['push', 'europe-west2-docker.pkg.dev/dateio/logoser/fetch:$SHORT_SHA']
+
+
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'europe-west2-docker.pkg.dev/dateio/logoser/fetch']
+
+
+
