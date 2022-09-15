@@ -1,3 +1,3 @@
 module github.com/prcek007/LogoSerFetch
 
-go 1.17
+go 1.18
