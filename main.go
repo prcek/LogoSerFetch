@@ -19,6 +19,9 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/aws/aws-sdk-go/aws"
@@ -34,6 +37,23 @@ func isRunningInContainer() bool {
 		return false
 	}
 	return true
+}
+
+type FileElem struct {
+	name       string
+	s3key      string
+	merchantId int64
+	suffix     string
+	hash       string
+	size       int64
+}
+
+type BatchElem struct {
+	name          string
+	metafileS3key string
+	timestamp     time.Time
+	key           string
+	files         *map[string]*FileElem
 }
 
 func S3Fetch() {
@@ -55,7 +75,8 @@ func S3Fetch() {
 	bucket := os.Getenv("AWS_S3_BUCKET") //"dateio-logoser"
 
 	delim := ""
-	prefix := "logos_to_process/logos_2022-09"
+	//prefix := "logos_to_process/"
+	prefix := "logos_to_process/logos_2022-09-07"
 	maxkey := int64(1000)
 
 	input := s3.ListObjectsV2Input{
@@ -68,25 +89,102 @@ func S3Fetch() {
 	}
 	page := 1
 
+	batches := make(map[string]*BatchElem)
+
 	err = svc.ListObjectsV2Pages(&input, func(objs *s3.ListObjectsV2Output, b bool) bool {
-		log.Print("page loaded - ", page)
+		log.Print("s3 page loaded - ", page)
 
-		/*
-			for _, item := range objs.Contents {
+		for _, item := range objs.Contents {
 
-				fmt.Println("Name:          ", *item.Key)
-				//root.Insert(*item.Key, *item.Size)
-				//fmt.Println("Last modified: ", *item.LastModified)
-				//fmt.Println("Size:          ", *item.Size)
-				//fmt.Println("Storage class: ", *item.StorageClass)
-				//fmt.Println("")
-			}*/
+			//fmt.Println("Name:          ", *item.Key)
+			parts := strings.Split(*item.Key, "/")
+			if len(parts) > 1 {
+				batch_id := parts[1]
+				be := batches[batch_id]
+				if be == nil {
+					log.Print("batch ", batch_id)
+					be = new(BatchElem)
+					fl := make(map[string]*FileElem)
+					be.files = &fl
+					be.key = batch_id
+
+					if !strings.HasPrefix(batch_id, "logos_") {
+						log.Panic("batch dir missing prefix 'logos_'")
+						return false
+					}
+					timestr := strings.TrimPrefix(batch_id, "logos_")
+					timeval, err := time.Parse(time.RFC3339, timestr)
+					if err != nil {
+						log.Panic("batch name parse time problem ", err)
+					}
+
+					be.name = batch_id
+					be.timestamp = timeval
+
+					batches[batch_id] = be
+				}
+				if len(parts) > 2 {
+					file_id := parts[2]
+					if strings.HasPrefix(file_id, "data_") && strings.HasSuffix(file_id, ".json") {
+
+						metatime, err := time.Parse(time.RFC3339, strings.TrimSuffix(strings.TrimPrefix(file_id, "data_"), ".json"))
+						if err != nil {
+							log.Panic("meta name parse time problem ", err)
+						}
+						if !metatime.Equal(be.timestamp) {
+							log.Panic("metafile timestamp diffs batch timestamp")
+						}
+						//log.Print("metafile detected ", *item.Key)
+						be.metafileS3key = *item.Key
+					} else {
+						//log.Print("file ", file_id)
+						fe := (*be.files)[file_id]
+						if fe == nil {
+							fe = new(FileElem)
+
+							fe.s3key = *item.Key
+							fe.name = file_id
+							fe.size = *item.Size
+
+							s1 := strings.Split(file_id, "_")
+							if len(s1) != 2 {
+								log.Panic("file name too many '_'", file_id)
+							}
+							i64, err := strconv.ParseInt(s1[0], 10, 64)
+							if err != nil {
+								log.Panic("file name cannot parse merchantid ", file_id)
+							}
+							fe.merchantId = i64
+
+							s2 := strings.Split(s1[1], ".")
+							if len(s2) != 2 {
+								log.Panic("file name cannot parse file suffix ", file_id)
+							}
+							fe.suffix = s2[1]
+
+							(*be.files)[file_id] = fe
+							//log.Print(fe)
+						} else {
+							log.Panic("duplicate file_id")
+						}
+					}
+				}
+			}
+
+			//root.Insert(*item.Key, *item.Size)
+			//fmt.Println("Last modified: ", *item.LastModified)
+			//fmt.Println("Size:          ", *item.Size)
+			//fmt.Println("Storage class: ", *item.StorageClass)
+			//fmt.Println("")
+		}
 		page++
 		return true
 	})
 	if err != nil {
 		log.Fatal("Error ListObjects", err)
 	}
+	log.Print("reading metafiles")
+
 }
 
 func createFireStoreClient(ctx context.Context) *firestore.Client {
@@ -120,6 +218,13 @@ func FireStoreTest() {
 		log.Println(doc.Data())
 	}
 
+	_, err := client.Collection("logo_batches").Doc("batch_id").Set(ctx, map[string]interface{}{
+		"name":        "logobatchname",
+		"dateExample": time.Now(),
+	})
+	if err != nil {
+		log.Fatalf("Failed adding alovelace: %v", err)
+	}
 }
 
 func main() {
@@ -135,8 +240,8 @@ func main() {
 	} else {
 		log.Print("Running in container. Using env.")
 	}
-
-	FireStoreTest()
-
+	S3Fetch()
+	//FireStoreTest()
+	//parseBatch("logos_2022-09-06T16:11:40Z")
 	log.Print("Done.")
 }
