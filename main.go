@@ -16,7 +16,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"strconv"
@@ -39,6 +41,17 @@ func isRunningInContainer() bool {
 	return true
 }
 
+type LogoMeta struct {
+	Merchant_id  int64
+	SeqNo        int
+	Scrape_time  string
+	Old_filename string
+	New_filename string
+	Origin_url   string
+	Color        string
+	Note         string
+}
+
 type FileElem struct {
 	name       string
 	s3key      string
@@ -49,11 +62,30 @@ type FileElem struct {
 }
 
 type BatchElem struct {
+	err           string
 	name          string
 	metafileS3key string
 	timestamp     time.Time
 	key           string
 	files         *map[string]*FileElem
+}
+
+func S3FileRead(svc *s3.S3, s3key string) ([]byte, error) {
+	requestInput := s3.GetObjectInput{
+		Bucket: aws.String(os.Getenv("AWS_S3_BUCKET")),
+		Key:    aws.String(s3key),
+	}
+
+	result, err := svc.GetObject(&requestInput)
+	if err != nil {
+		log.Print(err)
+		return nil, err
+	}
+	defer result.Body.Close()
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(result.Body)
+	return buf.Bytes(), nil
 }
 
 func S3Fetch() {
@@ -75,8 +107,8 @@ func S3Fetch() {
 	bucket := os.Getenv("AWS_S3_BUCKET") //"dateio-logoser"
 
 	delim := ""
-	//prefix := "logos_to_process/"
-	prefix := "logos_to_process/logos_2022-09-07"
+	prefix := "logos_to_process/"
+	//prefix := "logos_to_process/logos_2022-09-07"
 	maxkey := int64(1000)
 
 	input := s3.ListObjectsV2Input{
@@ -136,6 +168,7 @@ func S3Fetch() {
 						}
 						//log.Print("metafile detected ", *item.Key)
 						be.metafileS3key = *item.Key
+
 					} else {
 						//log.Print("file ", file_id)
 						fe := (*be.files)[file_id]
@@ -184,6 +217,22 @@ func S3Fetch() {
 		log.Fatal("Error ListObjects", err)
 	}
 	log.Print("reading metafiles")
+	for bk, b := range batches {
+		if b.metafileS3key == "" {
+			log.Print("batch without metafile ", b.name)
+			batches[bk].err = "no metafile"
+			continue
+		}
+		data, err := S3FileRead(svc, b.metafileS3key)
+		if err != nil {
+			log.Panic("can't fetch metafile ", b.metafileS3key)
+		}
+		var lms []LogoMeta
+		err = json.Unmarshal(data, &lms)
+		if err != nil {
+			log.Panic("can't parse json", b.metafileS3key)
+		}
+	}
 
 }
 
