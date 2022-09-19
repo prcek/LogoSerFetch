@@ -19,6 +19,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/joho/godotenv"
 )
 
@@ -50,4 +53,48 @@ func main() {
 	aws_access_key_id := os.Getenv("AWS_ACCESS_KEY_ID")
 	log.Print("AWS_ACCESS_KEY_ID is ", aws_access_key_id)
 
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String(os.Getenv("AWS_S3_REGION"))},
+	)
+	if err != nil {
+		log.Fatal("Error new sessiong", err)
+	}
+	svc := s3.New(sess)
+
+	bucket := os.Getenv("AWS_S3_BUCKET") //"dateio-logoser"
+
+	delim := ""
+	prefix := "logos_to_process/logos_2022-09"
+	maxkey := int64(1000)
+
+	input := s3.ListObjectsV2Input{
+		Bucket: &bucket,
+
+		Delimiter: &delim,
+
+		MaxKeys: &maxkey,
+		Prefix:  &prefix,
+	}
+	page := 1
+
+	err = svc.ListObjectsV2Pages(&input, func(objs *s3.ListObjectsV2Output, b bool) bool {
+		log.Print("page loaded - ", page)
+
+		/*
+			for _, item := range objs.Contents {
+
+				fmt.Println("Name:          ", *item.Key)
+				//root.Insert(*item.Key, *item.Size)
+				//fmt.Println("Last modified: ", *item.LastModified)
+				//fmt.Println("Size:          ", *item.Size)
+				//fmt.Println("Storage class: ", *item.StorageClass)
+				//fmt.Println("")
+			}*/
+		page++
+		return true
+	})
+	if err != nil {
+		log.Fatal("Error ListObjects", err)
+	}
+	log.Print("Done.")
 }
