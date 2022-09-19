@@ -111,8 +111,8 @@ func S3Fetch() map[string]*BatchElem {
 	bucket := os.Getenv("AWS_S3_BUCKET") //"dateio-logoser"
 
 	delim := ""
-	//prefix := "logos_to_process/"
-	prefix := "logos_to_process/logos_2022-09-07"
+	prefix := "logos_to_process/"
+	//prefix := "logos_to_process/logos_2022-09-07"
 	maxkey := int64(1000)
 
 	input := s3.ListObjectsV2Input{
