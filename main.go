@@ -23,7 +23,7 @@ import (
 )
 
 func isRunningInContainer() bool {
-	if _, err := os.Stat("/.dockerenv"); err != nil {
+	if _, err := os.Stat("/.inside"); err != nil {
 		return false
 	}
 	return true
