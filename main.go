@@ -71,7 +71,6 @@ type BatchElem struct {
 	name          string
 	metafileS3key string
 	timestamp     time.Time
-	key           string
 	files         *map[string]*FileElem
 }
 
@@ -93,7 +92,7 @@ func S3FileRead(svc *s3.S3, s3key string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func S3Fetch() {
+func S3Fetch() map[string]*BatchElem {
 	aws_s3_bucket := os.Getenv("AWS_S3_BUCKET")
 	log.Print("AWS_S3_BUCKET is ", aws_s3_bucket)
 	aws_s3_region := os.Getenv("AWS_S3_REGION")
@@ -112,8 +111,8 @@ func S3Fetch() {
 	bucket := os.Getenv("AWS_S3_BUCKET") //"dateio-logoser"
 
 	delim := ""
-	prefix := "logos_to_process/"
-	//prefix := "logos_to_process/logos_2022-09-07"
+	//prefix := "logos_to_process/"
+	prefix := "logos_to_process/logos_2022-09-07"
 	maxkey := int64(1000)
 
 	input := s3.ListObjectsV2Input{
@@ -143,7 +142,6 @@ func S3Fetch() {
 					be = new(BatchElem)
 					fl := make(map[string]*FileElem)
 					be.files = &fl
-					be.key = batch_id
 
 					if !strings.HasPrefix(batch_id, "logos_") {
 						log.Panic("batch dir missing prefix 'logos_'")
@@ -271,7 +269,7 @@ func S3Fetch() {
 			}
 		}
 	}
-
+	return batches
 }
 
 func createFireStoreClient(ctx context.Context) *firestore.Client {
@@ -287,13 +285,13 @@ func createFireStoreClient(ctx context.Context) *firestore.Client {
 	return client
 }
 
-func FireStoreTest() {
+func FireStoreUpdate(batches map[string]*BatchElem) {
 
 	ctx := context.Background()
 	client := createFireStoreClient(ctx)
 	defer client.Close()
 
-	iter := client.Collection("users").Documents(ctx)
+	iter := client.Collection("logo_batches").Documents(ctx)
 	for {
 		doc, err := iter.Next()
 		if err == iterator.Done {
@@ -302,16 +300,61 @@ func FireStoreTest() {
 		if err != nil {
 			log.Fatalf("Failed to iterate: %v", err)
 		}
-		log.Println(doc.Data())
+		bid := doc.Ref.ID
+		batch := batches[bid]
+		if batch == nil {
+			log.Print("missing S3 batch ", bid)
+		}
+	}
+	for bkey, batch := range batches {
+		_, err := client.Collection("logo_batches").Doc(bkey).Set(ctx, map[string]interface{}{
+			"name":          batch.name,
+			"timestamp":     batch.timestamp,
+			"err":           batch.err,
+			"metafileS3key": batch.metafileS3key,
+			"files":         len(*batch.files),
+		})
+		if err != nil {
+			log.Fatalf("Failed adding batch: %v", err)
+		}
+
+		iter := client.Collection("logo_batches").Doc(bkey).Collection("logo_files").Documents(ctx)
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				log.Fatalf("Failed to iterate: %v", err)
+			}
+			fid := doc.Ref.ID
+			file := (*batch.files)[fid]
+			if file == nil {
+				log.Print("missing S3 file ", fid)
+			}
+		}
+
+		for fkey, file := range *batch.files {
+			_, err := client.Collection("logo_batches").Doc(bkey).Collection("logo_files").Doc(fkey).Set(ctx, map[string]interface{}{
+				"name":       file.name,
+				"s3key":      file.s3key,
+				"merchantId": file.merchantId,
+
+				"suffix":      file.suffix,
+				"hash":        file.hash,
+				"size":        file.size,
+				"hasMeta":     file.hasMeta,
+				"mNote":       file.mNote,
+				"mColor":      file.mColor,
+				"mOriginUrl":  file.mOriginUrl,
+				"mScape_time": file.mScape_time,
+			})
+			if err != nil {
+				log.Fatalf("Failed adding file: %v", err)
+			}
+		}
 	}
 
-	_, err := client.Collection("logo_batches").Doc("batch_id").Set(ctx, map[string]interface{}{
-		"name":        "logobatchname",
-		"dateExample": time.Now(),
-	})
-	if err != nil {
-		log.Fatalf("Failed adding alovelace: %v", err)
-	}
 }
 
 func main() {
@@ -327,8 +370,9 @@ func main() {
 	} else {
 		log.Print("Running in container. Using env.")
 	}
-	S3Fetch()
-	//FireStoreTest()
+	batches := S3Fetch()
+
+	FireStoreUpdate(batches)
 	//parseBatch("logos_2022-09-06T16:11:40Z")
 	log.Print("Done.")
 }
