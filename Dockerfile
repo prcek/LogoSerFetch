@@ -46,8 +46,14 @@ RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -
 # Copy the binary to the production image from the builder stage.
 COPY --from=builder /app/server /app/server
 
+# .inside = do not load .env file 
 RUN touch /.inside
+
+ENV AWS_ACCESS_KEY_ID ?
+ENV AWS_SECRET_ACCESS_KEY ?
 ENV AWS_S3_BUCKET ?
+ENV AWS_S3_REGION ?
+
 
 
 # Run the web service on container startup.
