@@ -53,12 +53,17 @@ type LogoMeta struct {
 }
 
 type FileElem struct {
-	name       string
-	s3key      string
-	merchantId int64
-	suffix     string
-	hash       string
-	size       int64
+	name        string
+	s3key       string
+	merchantId  int64
+	suffix      string
+	hash        string
+	size        int64
+	hasMeta     bool
+	mNote       string
+	mColor      string
+	mOriginUrl  string
+	mScape_time time.Time
 }
 
 type BatchElem struct {
@@ -194,6 +199,7 @@ func S3Fetch() {
 								log.Panic("file name cannot parse file suffix ", file_id)
 							}
 							fe.suffix = s2[1]
+							fe.hash = s2[0]
 
 							(*be.files)[file_id] = fe
 							//log.Print(fe)
@@ -218,11 +224,13 @@ func S3Fetch() {
 	}
 	log.Print("reading metafiles")
 	for bk, b := range batches {
+
 		if b.metafileS3key == "" {
 			log.Print("batch without metafile ", b.name)
 			batches[bk].err = "no metafile"
 			continue
 		}
+		log.Print(b.metafileS3key)
 		data, err := S3FileRead(svc, b.metafileS3key)
 		if err != nil {
 			log.Panic("can't fetch metafile ", b.metafileS3key)
@@ -231,6 +239,36 @@ func S3Fetch() {
 		err = json.Unmarshal(data, &lms)
 		if err != nil {
 			log.Panic("can't parse json", b.metafileS3key)
+		}
+
+		for _, lm := range lms {
+			//fmt.Println(lm.New_filename)
+			fe := (*b.files)[lm.New_filename]
+			if fe == nil {
+				log.Panic("missing ", lm.New_filename)
+			}
+			if fe.hasMeta {
+				log.Print("duplicate meta - last meta used -", lm.New_filename)
+			}
+			(*b.files)[lm.New_filename].hasMeta = true
+			if fe.merchantId != lm.Merchant_id {
+				log.Panic("Merchant_id diff meta vs. files")
+			}
+			(*b.files)[lm.New_filename].mColor = lm.Color
+			(*b.files)[lm.New_filename].mNote = lm.Note
+			(*b.files)[lm.New_filename].mOriginUrl = lm.Origin_url
+
+			scrapetime, err := time.Parse(time.RFC3339, lm.Scrape_time)
+			if err != nil {
+				log.Panic("can't parse scrape time")
+
+			}
+			(*b.files)[lm.New_filename].mScape_time = scrapetime
+		}
+		for _, f := range *b.files {
+			if !f.hasMeta {
+				log.Panic("file without meta ", f.s3key)
+			}
 		}
 	}
 
