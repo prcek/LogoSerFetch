@@ -45,4 +45,9 @@ func main() {
 
 	aws_s3_bucket := os.Getenv("AWS_S3_BUCKET")
 	log.Print("AWS_S3_BUCKET is ", aws_s3_bucket)
+	aws_s3_region := os.Getenv("AWS_S3_REGION")
+	log.Print("AWS_S3_REGION is ", aws_s3_region)
+	aws_access_key_id := os.Getenv("AWS_ACCESS_KEY_ID")
+	log.Print("AWS_ACCESS_KEY_ID is ", aws_access_key_id)
+
 }
