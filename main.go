@@ -16,12 +16,16 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
+	"cloud.google.com/go/firestore"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"google.golang.org/api/iterator"
+
 	"github.com/joho/godotenv"
 )
 
@@ -32,20 +36,7 @@ func isRunningInContainer() bool {
 	return true
 }
 
-func main() {
-	log.Print("LogoSerFetch 0.1")
-
-	if !isRunningInContainer() {
-		log.Print("Not running in container. Loading '.env'.")
-		err := godotenv.Load()
-
-		if err != nil {
-			log.Fatal("Error loading .env file", err)
-		}
-	} else {
-		log.Print("Running in container. Using env.")
-	}
-
+func S3Fetch() {
 	aws_s3_bucket := os.Getenv("AWS_S3_BUCKET")
 	log.Print("AWS_S3_BUCKET is ", aws_s3_bucket)
 	aws_s3_region := os.Getenv("AWS_S3_REGION")
@@ -96,5 +87,56 @@ func main() {
 	if err != nil {
 		log.Fatal("Error ListObjects", err)
 	}
+}
+
+func createFireStoreClient(ctx context.Context) *firestore.Client {
+	// Sets your Google Cloud Platform project ID.
+	projectID := os.Getenv("GCP_PROJECT")
+	log.Print("GCP_PROJECT is ", projectID)
+	client, err := firestore.NewClient(ctx, projectID)
+	if err != nil {
+		log.Fatalf("Failed to create client: %v", err)
+	}
+	// Close client when done with
+	// defer client.Close()
+	return client
+}
+
+func FireStoreTest() {
+
+	ctx := context.Background()
+	client := createFireStoreClient(ctx)
+	defer client.Close()
+
+	iter := client.Collection("users").Documents(ctx)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Failed to iterate: %v", err)
+		}
+		log.Println(doc.Data())
+	}
+
+}
+
+func main() {
+	log.Print("LogoSerFetch 0.1")
+
+	if !isRunningInContainer() {
+		log.Print("Not running in container. Loading '.env'.")
+		err := godotenv.Load()
+
+		if err != nil {
+			log.Fatal("Error loading .env file", err)
+		}
+	} else {
+		log.Print("Running in container. Using env.")
+	}
+
+	FireStoreTest()
+
 	log.Print("Done.")
 }
